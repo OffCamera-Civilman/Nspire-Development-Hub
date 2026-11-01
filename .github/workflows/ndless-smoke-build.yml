@@ -14,29 +14,23 @@ jobs:
   build-smoke:
     runs-on: ubuntu-latest
     steps:
-      # Checkout and artifact actions must run on a modern host, not inside
-      # the decade-old ndless/ndless-sdk container.
       - uses: actions/checkout@v4
-      - name: Inspect legacy Ndless SDK image
-        shell: bash
-        run: |
-          set -euxo pipefail
-          docker pull ndless/ndless-sdk:latest
-          docker image inspect ndless/ndless-sdk:latest --format '{{.Os}}/{{.Architecture}} {{.Config.WorkingDir}}'
-          docker run --rm --entrypoint /bin/sh ndless/ndless-sdk:latest -c 'echo "PATH=$PATH"; command -v nspire-gcc; command -v nspire-ld; command -v genzehn; command -v make-prg; command -v make'
-      - name: Compile minimal Ndless application inside SDK
-        shell: bash
+      - name: Pull Ndless compiler image
+        run: docker pull ndless/ndless-sdk:latest
+      - name: Compile Run001 in Ndless SDK
         run: |
           set -euxo pipefail
           docker run --rm --entrypoint /bin/sh \
             --mount "type=bind,source=$GITHUB_WORKSPACE,target=/work" \
             --workdir /work \
             ndless/ndless-sdk:latest \
-            -c 'set -eu; make -C tools/ndless-smoke; test -s tools/ndless-smoke/NspireSmoke_Run001.tns'
-      - name: Validate calculator artifact
-        shell: bash
-        run: test -s tools/ndless-smoke/NspireSmoke_Run001.tns
-      - name: Upload calculator application
+            -c 'set -eu; command -v nspire-gcc; command -v nspire-ld; command -v genzehn; make -C tools/ndless-smoke clean all'
+      - name: Verify .tns output
+        run: |
+          test -s tools/ndless-smoke/NspireSmoke_Run001.tns
+          file tools/ndless-smoke/NspireSmoke_Run001.tns
+          sha256sum tools/ndless-smoke/NspireSmoke_Run001.tns
+      - name: Upload .tns file
         uses: actions/upload-artifact@v4
         with:
           name: NspireSmoke_Run001
