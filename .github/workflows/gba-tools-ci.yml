@@ -1,0 +1,25 @@
+name: GBA Tools CI
+
+on:
+  push:
+    paths:
+      - 'gba-emulator/tools/**'
+      - '.github/workflows/gba-tools-ci.yml'
+  pull_request:
+    paths:
+      - 'gba-emulator/tools/**'
+      - '.github/workflows/gba-tools-ci.yml'
+  workflow_dispatch:
+
+jobs:
+  test-header-tool:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Run synthetic GBA header tests
+        run: python -m unittest discover -s gba-emulator/tools -p 'test_*.py' -v
