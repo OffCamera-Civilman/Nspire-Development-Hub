@@ -1,0 +1,20 @@
+# Build artifacts
+build/
+dist/
+*.o
+*.elf
+*.map
+*.tns
+
+# Local game files and firmware
+*.gba
+*.gbc
+*.gb
+*.sav
+*.srm
+*.bios
+*.bin
+
+# Tooling
+.DS_Store
+__pycache__/
