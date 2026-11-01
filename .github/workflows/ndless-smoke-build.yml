@@ -1,0 +1,39 @@
+name: Ndless SDK Smoke Build
+
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - 'tools/ndless-smoke/**'
+      - '.github/workflows/ndless-smoke-build.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  build-smoke:
+    runs-on: ubuntu-latest
+    container:
+      image: ndless/ndless-sdk:latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Check available SDK tools
+        shell: bash
+        run: |
+          set -eux
+          command -v nspire-gcc
+          command -v nspire-ld
+          command -v genzehn
+          command -v make-prg
+      - name: Compile minimal Ndless application
+        shell: bash
+        run: make -C tools/ndless-smoke
+      - name: Validate nonempty calculator artifact
+        shell: bash
+        run: test -s tools/ndless-smoke/NspireSmoke_Run001.tns
+      - name: Upload calculator application
+        uses: actions/upload-artifact@v4
+        with:
+          name: NspireSmoke_Run001
+          path: tools/ndless-smoke/NspireSmoke_Run001.tns
+          if-no-files-found: error
