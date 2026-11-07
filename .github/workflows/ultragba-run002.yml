@@ -1,0 +1,55 @@
+name: UltraGBA Run002 - Reproducible Emulator Baseline
+
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - '.github/workflows/ultragba-run002.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Checkout development hub
+        uses: actions/checkout@v4
+      - name: Fetch upstream gpSP v0.4.1 baseline
+        run: |
+          set -euxo pipefail
+          git clone --depth 1 --branch v0.4.1 https://github.com/andymcca/lr-gpsp-nspire.git upstream-gpsp
+          git -C upstream-gpsp rev-parse HEAD | tee upstream-commit.txt
+          git -C upstream-gpsp status --short
+      - name: Build TI-Nspire emulator with Ndless SDK
+        run: |
+          set -euxo pipefail
+          docker pull ndless/ndless-sdk:latest
+          docker run --rm --entrypoint /bin/sh \
+            --mount "type=bind,source=$GITHUB_WORKSPACE,target=/work" \
+            --workdir /work/upstream-gpsp \
+            ndless/ndless-sdk:latest \
+            -c 'set -eu; command -v nspire-gcc; command -v nspire-g++; command -v genzehn; make -j2'
+      - name: Package isolated Run002 binary
+        run: |
+          set -euxo pipefail
+          test -s upstream-gpsp/gpsp_libretro.tns
+          mkdir -p dist
+          cp upstream-gpsp/gpsp_libretro.tns dist/UltraGBA_Run002_Baseline.tns
+          cp upstream-commit.txt dist/upstream-commit.txt
+          sha256sum dist/UltraGBA_Run002_Baseline.tns | tee dist/SHA256SUMS.txt
+          cat > dist/README.txt <<'EOF'
+          UltraGBA Run002 — clean upstream v0.4.1 baseline for regression testing.
+          This is a new emulator build, NOT a performance or crash fix.
+          Keep your existing working gpsp_libretro.tns and ROMs unchanged.
+          Test separately; record boot, first battle, and menu transitions.
+          Performance numbers from Run001 are labeled FireRed (BPRE), not Unbound.
+          Never overwrite your existing working emulator until verified.
+          EOF
+      - name: Upload calculator-ready build
+        uses: actions/upload-artifact@v4
+        with:
+          name: UltraGBA_Run002_Baseline
+          path: dist/
+          if-no-files-found: error
