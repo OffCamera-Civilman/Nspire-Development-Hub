@@ -12,25 +12,46 @@ permissions:
 
 jobs:
   build-smoke:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
+    container: debian:13-slim
+    defaults:
+      run:
+        shell: bash
     steps:
+      - name: Install official Ndless SDK
+        env:
+          GH_TOKEN: ${{ github.token }}
+          DEBIAN_FRONTEND: noninteractive
+        run: |
+          set -euo pipefail
+          apt-get update -qq
+          apt-get install -y --no-install-recommends ca-certificates curl git jq
+
+          release=https://api.github.com/repos/ndless-nspire/Ndless/releases/tags/nightly
+          asset=$(curl -fsSL --retry 3 -H "Authorization: Bearer $GH_TOKEN" "$release" |
+            jq -ce '[.assets[] | select(.state == "uploaded" and
+              (.name | startswith("ndless-sdk_") and endswith("_amd64.deb")))]
+              | max_by(.created_at) // empty')
+          url=$(jq -er '.browser_download_url' <<< "$asset")
+          digest=$(jq -er '.digest | capture("^sha256:(?<sha>[0-9a-f]{64})$").sha' <<< "$asset")
+          curl -fsSL --retry 3 -o /tmp/ndless-sdk.deb "$url"
+          printf '%s  /tmp/ndless-sdk.deb\n' "$digest" | sha256sum --check
+          apt-get install -y --no-install-recommends /tmp/ndless-sdk.deb
+          dpkg-query -W ndless-sdk
+
       - uses: actions/checkout@v4
-      - name: Pull Ndless compiler image
-        run: docker pull ndless/ndless-sdk:latest
-      - name: Compile Run001 in Ndless SDK
+        with:
+          persist-credentials: false
+
+      - name: Compile and verify Run001
+        working-directory: tools/ndless-smoke
         run: |
-          set -euxo pipefail
-          docker run --rm --entrypoint /bin/sh \
-            --mount "type=bind,source=$GITHUB_WORKSPACE,target=/work" \
-            --workdir /work \
-            ndless/ndless-sdk:latest \
-            -c 'set -eu; command -v nspire-gcc; command -v nspire-ld; command -v genzehn; make -C tools/ndless-smoke clean all'
-      - name: Verify .tns output
-        run: |
-          test -s tools/ndless-smoke/NspireSmoke_Run001.tns
-          file tools/ndless-smoke/NspireSmoke_Run001.tns
-          sha256sum tools/ndless-smoke/NspireSmoke_Run001.tns
-      - name: Upload .tns file
+          make
+          genzehn --info --input NspireSmoke_Run001.zehn
+          test -s NspireSmoke_Run001.tns
+          sha256sum NspireSmoke_Run001.tns
+
+      - name: Upload calculator program
         uses: actions/upload-artifact@v4
         with:
           name: NspireSmoke_Run001

@@ -1,4 +1,4 @@
-# Minimal Ndless build, using the official SDK's native Zehn output.
+# Build and package the Run001 Ndless test program.
 EXE = NspireSmoke_Run001
 GCC = nspire-gcc
 LD = nspire-ld
@@ -12,10 +12,13 @@ main.o: main.c
 $(EXE).elf: main.o
 	$(LD) $^ -o $@
 
-$(EXE).tns: $(EXE).elf
+$(EXE).zehn: $(EXE).elf
 	$(GENZEHN) --input $< --output $@ --name "Nspire Smoke 001"
 
+$(EXE).tns: $(EXE).zehn
+	make-prg $< $@
+
 clean:
-	rm -f main.o $(EXE).elf $(EXE).tns
+	rm -f main.o $(EXE).elf $(EXE).zehn $(EXE).tns
 
 .PHONY: all clean
