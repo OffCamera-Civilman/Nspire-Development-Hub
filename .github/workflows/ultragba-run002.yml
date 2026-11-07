@@ -25,11 +25,11 @@ jobs:
       - name: Build TI-Nspire emulator with Ndless SDK
         run: |
           set -euxo pipefail
-          docker pull ndless/ndless-sdk:latest
+          docker pull bensuperpc/ndless:latest
           docker run --rm --entrypoint /bin/sh \
             --mount "type=bind,source=$GITHUB_WORKSPACE,target=/work" \
             --workdir /work/upstream-gpsp \
-            ndless/ndless-sdk:latest \
+            bensuperpc/ndless:latest \
             -c 'set -eu; command -v nspire-gcc; command -v nspire-g++; command -v genzehn; make -j2'
       - name: Package isolated Run002 binary
         run: |
