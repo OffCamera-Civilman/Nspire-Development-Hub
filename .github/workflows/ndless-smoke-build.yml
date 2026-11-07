@@ -1,10 +1,11 @@
-name: Ndless SDK Smoke Build
+name: Ndless Calculator Builds
 
 on:
   workflow_dispatch:
   push:
     paths:
       - 'tools/ndless-smoke/**'
+      - 'Projects/UltraGBA/**'
       - '.github/workflows/ndless-smoke-build.yml'
 
 permissions:
@@ -12,6 +13,7 @@ permissions:
 
 jobs:
   build-smoke:
+    name: Build calculator programs
     runs-on: ubuntu-24.04
     container: debian:13-slim
     defaults:
@@ -56,4 +58,23 @@ jobs:
         with:
           name: NspireSmoke_Run001
           path: tools/ndless-smoke/NspireSmoke_Run001.tns
+          if-no-files-found: error
+
+      - name: Build and exercise UltraGBA Run001
+        run: |
+          apt-get install -y --no-install-recommends gcc g++ zlib1g-dev
+          bash Projects/UltraGBA/build.sh "$RUNNER_TEMP/ultragba"
+
+      - name: Upload UltraGBA and its test cartridge
+        uses: actions/upload-artifact@v4
+        with:
+          name: UltraGBA_Run001
+          path: ${{ runner.temp }}/ultragba/*.tns
+          if-no-files-found: error
+
+      - name: Upload matching emulator source
+        uses: actions/upload-artifact@v4
+        with:
+          name: UltraGBA_Run001-source
+          path: ${{ runner.temp }}/ultragba/UltraGBA_Run001-source.tar.gz
           if-no-files-found: error

@@ -1,0 +1,304 @@
+diff --git a/nspire_config.c b/nspire_config.c
+index 1e579d6..badc57d 100644
+--- a/nspire_config.c
++++ b/nspire_config.c
+@@ -140,13 +140,6 @@ static void apply(const u32 *values)
+ }
+ 
+ #define CONFIG_FILE     "gpsp_qol.cfg.tns"
+-#define OLD_CONFIG_FILE "gpsp.cfg.tns"   /* older gpSP builds' */
+-
+-/* A settings file next to gpSP (builds before the saves folder). */
+-static void program_folder_path(char *path, const char *name)
+-{
+-  sprintf(path, "%s/%s", main_path, name);
+-}
+ 
+ /* A whole settings file into o (at most CONFIG_WORDS words): its size, or
+  * -1 if it isn't there or is bigger than any settings file. */
+@@ -186,16 +179,6 @@ static long read_settings(u32 *o)
+   if (size >= 0)
+     return size;
+   nspire_save_file(path, sizeof(path), CONFIG_FILE);
+-  if ((size = read_settings_file(path, o)) >= 0)
+-    return size;
+-  program_folder_path(path, CONFIG_FILE);
+-  if ((size = read_settings_file(path, o)) >= 0)
+-    return size;
+-  /* Older builds' file, moved into the saves folder at start. */
+-  nspire_save_file(path, sizeof(path), OLD_CONFIG_FILE);
+-  if ((size = read_settings_file(path, o)) >= 0)
+-    return size;
+-  program_folder_path(path, OLD_CONFIG_FILE);
+   return read_settings_file(path, o);
+ }
+ 
+diff --git a/nspire_host_main.c b/nspire_host_main.c
+index dd3b235..34d5102 100644
+--- a/nspire_host_main.c
++++ b/nspire_host_main.c
+@@ -20,10 +20,12 @@
+ 
+ #include <os.h>
+ #include <ctype.h>
++#include <stdarg.h>
+ #include <stdint.h>
+ #include <stdio.h>
+ #include <stdlib.h>
+ #include <string.h>
++#include <sys/stat.h>
+ #include <unistd.h>
+ 
+ /* The official BIOS file: in the saves folder, where gpSP moves it from
+@@ -244,9 +246,30 @@ void save_state(u8 *filename, u16 *screen_capture)
+ 
+ /* ---- Starting and leaving games ---- */
+ 
++/* Close each record so the previous stage can be read after a reset. */
++static int trace_first_frame;
++
++static void boot_log(const char *mode, const char *format, ...)
++{
++  char path[600];
++  FILE *file;
++  va_list args;
++
++  nspire_save_file(path, sizeof(path), "boot.txt.tns");
++  file = fopen(path, mode);
++  if (!file)
++    return;
++  va_start(args, format);
++  vfprintf(file, format, args);
++  va_end(args);
++  fputc('\n', file);
++  fclose(file);
++}
++
+ int nspire_start_game(const char *rom_path)
+ {
+   char full_path[512];
++  struct stat rom_stat;
+   int newest;
+ 
+   /* The file browser gives a name in the folder it's in. The game's saves,
+@@ -264,19 +287,28 @@ int nspire_start_game(const char *rom_path)
+     rom_path = full_path;
+   }
+ 
++  trace_first_frame = 0;
++  boot_log("w", "UltraGBA Run001\nSelected: %s", rom_path);
++  if (stat(rom_path, &rom_stat) == 0)
++    boot_log("a", "File bytes: %lu", (unsigned long)rom_stat.st_size);
+   nspire_loading_start(rom_path);
+-  nspire_game_move_old_files(rom_path);
+   nspire_config_open_game(rom_path);
+   nspire_apply_bios();
++  boot_log("a", "Reading ROM: cache=%u MiB renderer=%u smc=%u full_clean=%u",
++           (unsigned)nspire_rom_buffer_size_choice, (unsigned)nspire_video_renderer_choice,
++           (unsigned)nspire_dynarec_ram_policy, (unsigned)nspire_lcd_cache_clean_full);
+   if (load_gamepak(NULL, rom_path, nspire_rtc_force_value(), FEAT_AUTODETECT,
+                    SERIAL_MODE_AUTO) != 0)
+   {
++    boot_log("a", "ROM load failed: %s", nspire_rom_load_error ? nspire_rom_load_error : "read error");
+     nspire_config_close_game();
+     nspire_loading_failed(nspire_rom_load_error ? nspire_rom_load_error :
+                           "Couldn't read this game. Is it a GBA ROM?");
+     return 0;
+   }
++  boot_log("a", "ROM loaded; starting GBA reset");
+   reset_gba();
++  boot_log("a", "GBA reset complete");
+   instruction_count = 0;
+   reg[OAM_UPDATED] = 1;
+   nspire_frameskip_reset();
+@@ -299,6 +331,8 @@ int nspire_start_game(const char *rom_path)
+   }
+   nspire_skip_state_load = 0;
+   nspire_loading_end();
++  boot_log("a", "Game ready for execution");
++  trace_first_frame = 1;
+   nspire_reset_timing();
+   return 1;
+ }
+@@ -433,6 +467,8 @@ static void game_stopped(void)
+   snprintf(why, sizeof(why), "It jumped to %08X, where nothing\ncan run: its ROM is probably damaged.",
+            (unsigned)nspire_bad_jump_pc);
+   nspire_bad_jump = 0;
++  boot_log("a", "Emulation stopped: %s", why);
++  trace_first_frame = 0;
+   nspire_game_stopped(why);
+   update_backup_force();
+   nspire_config_close_game();
+@@ -487,6 +523,11 @@ static void run_frame(void)
+     u32 start = nspire_ticks();
+     nspire_present_frame();
+     output_ticks = nspire_ticks() - start;
++    if (trace_first_frame)
++    {
++      trace_first_frame = 0;
++      boot_log("a", "First frame presented");
++    }
+   }
+   nspire_frameskip_end_frame(output_ticks);
+   update_backup();
+@@ -738,103 +779,6 @@ void nspire_speed_test(void)
+ 
+ /* ---- Start ---- */
+ 
+-/* ROMs opened from the calculator's documents start this gpSP: Ndless keeps
+- * file associations in ndless.cfg.tns as "ext.gba=<program name without
+- * .tns>" and finds the program by that name, so the name gpSP was started
+- * as is registered. An association naming another program is left alone
+- * (Ndless's rule); one naming a gpSP like this one (a name starting with
+- * gpsp_ or _gpsp, such as gpsp_qol, this build's name before _gpSP) is
+- * pointed at this one, so renaming the program keeps ROMs opening. */
+-static const char *const rom_types[] = { "gba", "gbz" };
+-#define NUM_ROM_TYPES (sizeof(rom_types) / sizeof(rom_types[0]))
+-
+-static int gpsp_program_name(const char *value, size_t len)
+-{
+-  return len >= 5 && (!strncasecmp(value, "gpsp_", 5) || !strncasecmp(value, "_gpsp", 5));
+-}
+-
+-/* The file is short: read it whole, change the lines, write it back. */
+-static void retarget_rom_types(const char *name)
+-{
+-  static char text[8192], out[8192 + 256];
+-  char path[600];
+-  size_t len, out_len = 0, name_len = strlen(name), i;
+-  int changed = 0;
+-  char *line;
+-  FILE *f;
+-
+-  snprintf(path, sizeof(path), "%sndless/ndless.cfg.tns", get_documents_dir());
+-  f = fopen(path, "rb");
+-  if (!f)
+-    return;
+-  len = fread(text, 1, sizeof(text) - 1, f);
+-  if (!feof(f))   /* longer than any ndless.cfg.tns: leave it */
+-  {
+-    fclose(f);
+-    return;
+-  }
+-  fclose(f);
+-  text[len] = 0;
+-
+-  for (line = text; *line; )
+-  {
+-    char *end = strchr(line, '\n');
+-    size_t line_len = end ? (size_t)(end - line + 1) : strlen(line);
+-    const char *value = NULL;
+-    size_t value_len;
+-
+-    for (i = 0; i < NUM_ROM_TYPES; i++)
+-    {
+-      char key[16];
+-      snprintf(key, sizeof(key), "ext.%s=", rom_types[i]);
+-      if (!strncmp(line, key, strlen(key)))
+-        value = line + strlen(key);
+-    }
+-    value_len = value ? strcspn(value, "\r\n") : 0;
+-    if (value && gpsp_program_name(value, value_len) &&
+-        !(value_len == name_len && !strncmp(value, name, name_len)) &&
+-        out_len + (size_t)(value - line) + name_len + 1 < sizeof(out))
+-    {
+-      memcpy(out + out_len, line, value - line);
+-      out_len += value - line;
+-      memcpy(out + out_len, name, name_len);
+-      out_len += name_len;
+-      out[out_len++] = '\n';
+-      changed = 1;
+-    }
+-    else if (out_len + line_len < sizeof(out))
+-    {
+-      memcpy(out + out_len, line, line_len);
+-      out_len += line_len;
+-    }
+-    line += line_len;
+-  }
+-
+-  if (changed && (f = fopen(path, "wb")) != NULL)
+-  {
+-    fwrite(out, 1, out_len, f);
+-    fclose(f);
+-  }
+-}
+-
+-static void register_rom_types(const char *exe_path)
+-{
+-  const char *slash = strrchr(exe_path, '/');
+-  char name[64];
+-  size_t len, i;
+-
+-  snprintf(name, sizeof(name), "%s", slash ? slash + 1 : exe_path);
+-  len = strlen(name);
+-  if (len > 4 && !strcasecmp(name + len - 4, ".tns"))
+-    name[len - 4] = 0;
+-  if (!name[0])
+-    return;
+-  retarget_rom_types(name);
+-  /* The types that have no program yet. */
+-  for (i = 0; i < NUM_ROM_TYPES; i++)
+-    cfg_register_fileext(rom_types[i], name);
+-}
+-
+ int main(int argc, char *argv[])
+ {
+   u8 load_filename[512];
+@@ -848,14 +792,9 @@ int main(int argc, char *argv[])
+ 
+   ChangeWorkingDirectory(argv[0]);
+   getcwd(main_path, sizeof(main_path));
+-  /* The saves folder, made on the first start (also on a new calculator,
+-   * wherever gpSP is), and what earlier builds left in My Documents
+-   * (gpSP_saves) and next to gpSP moved in, before the settings are read
+-   * (nspire_paths.h). */
++  /* Test profiles have their own saves and settings. */
+   snprintf(nspire_program_path, sizeof(nspire_program_path), "%s", argv[0]);
+   nspire_save_dir_make();
+-  nspire_move_old_documents_files();
+-  nspire_move_old_files(main_path, 1);
+   keys_set_defaults(key_bindings);
+   /* Settings found elsewhere (the saves folder's copy, an older build's
+    * file) go into the program file now, not at the next save. */
+@@ -871,7 +810,6 @@ int main(int argc, char *argv[])
+   nspire_brightness_init();
+   nspire_brightness_apply();
+   nspire_clock_check_crash();
+-  register_rom_types(argv[0]);
+   core_bootstrap();
+   init_video();
+   video_resolution_large();
+diff --git a/nspire_paths.h b/nspire_paths.h
+index a06a1c1..8d74ddb 100644
+--- a/nspire_paths.h
++++ b/nspire_paths.h
+@@ -20,7 +20,7 @@
+ 
+ #include <stddef.h>
+ 
+-#define SAVE_FOLDER "zgpSP_saves"
++#define SAVE_FOLDER "UltraGBA_Test"
+ /* The saves folder's name before it got the z. */
+ #define OLD_SAVE_FOLDER "gpSP_saves"
+ 
+diff --git a/nspire_stubs.c b/nspire_stubs.c
+index c6e1b27..5da6a42 100644
+--- a/nspire_stubs.c
++++ b/nspire_stubs.c
+@@ -18,13 +18,13 @@ u32 nspire_rtc_choice = 0;
+ /* Libretro gpsp_frame_mixing: 0=off, 1=on. */
+ u32 nspire_frame_mix_choice = 0;
+ /* 0 = range D-clean of LCD buffer; 1 = full clean_dcache before display swap. */
+-u32 nspire_lcd_cache_clean_full = 0;
++u32 nspire_lcd_cache_clean_full = 1;
+ /* 1 = draw FPS overlay on presented game frames. */
+ u32 nspire_fps_overlay = 0;
+ /* 1 = skip PPU BLDCNT blending / brightness passes (performance; inaccurate). */
+ u32 nspire_gba_blend_off = 0;
+ /* 0 = libretro video.cc renderer; 1 = legacy old_video/video.c renderer. */
+-u32 nspire_video_renderer_choice = 0;
++u32 nspire_video_renderer_choice = 1;
+ /* 0 = partial SMC (default); 1 = classic — flush_dynarec_caches on SMC + full
+  * PC-relative block linking from RAM code (same emits as ROM blocks). */
+ u32 nspire_dynarec_ram_policy = 0;
