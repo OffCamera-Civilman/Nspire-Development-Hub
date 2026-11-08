@@ -1,4 +1,4 @@
-name: UltraGBA Run004 - Compressed ROMs and ROM-Local Saves
+name: UltraGBA Run004 - Custom RTC and Local Data
 
 on:
   workflow_dispatch:
@@ -41,18 +41,18 @@ jobs:
           set -euxo pipefail
           test -s upstream-gpsp/gpsp_libretro.tns
           mkdir -p dist
-          cp upstream-gpsp/gpsp_libretro.tns dist/UltraGBA_Run004_LocalData_Preview.tns
+          cp upstream-gpsp/gpsp_libretro.tns dist/UltraGBA_Run004_CustomRTC_Preview.tns
           cp upstream-commit.txt dist/
           sha256sum dist/*.tns > dist/SHA256SUMS.txt
           cat > dist/README.txt <<'EOF'
-          Run004 LocalData preview — experimental. Keep the old emulator and ALL existing saves.
+          Run004 Custom RTC preview — experimental. Keep the old emulator and ALL existing saves.
           ROM saves, states and per-game settings remain beside ROMs.
           Emulator-managed files now use UltraGBA_Data beside emulator; old central folder is untouched.
           Large ZIP ROMs may still run out of RAM: use GBZ instead.
           Use upstream tools/gbz.py pack GAME.zip.tns on Android/Termux;
           copy the resulting GAME.gbz.tns to the Nspire.
           GBZ page-based loading uses the selected ROM buffer, e.g. 8 MiB.
-          Existing central files stay in their old location; no automatic migration.\n          Test new games or backed-up saves; do not remove originals. Custom RTC is NOT yet included.
+          Existing central files stay in their old location; no automatic migration.\n          Test new games or backed-up saves; do not remove originals. Custom RTC menu included: select System/Custom, set date and Apply RTC. Custom clock advances while emulator runs; offline elapsed-time recovery is not yet implemented.
           EOF
       - uses: actions/upload-artifact@v4
         with:
