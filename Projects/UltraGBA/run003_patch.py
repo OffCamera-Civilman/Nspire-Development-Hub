@@ -86,7 +86,7 @@ host = Path("upstream-gpsp/nspire_host_main.c")
 code = host.read_text()
 needle = '  snprintf(nspire_program_path, sizeof(nspire_program_path), "%s", argv[0]);'
 assert code.count(needle) == 1
-code = code.replace(needle, needle + '\\n  nspire_test_dir_init(main_path);')
+code = code.replace(needle, needle + '\n  nspire_test_dir_init(main_path);')
 needle = 'nspire_save_file(path, sizeof(path), "gpsp_results.txt.tns");'
 assert code.count(needle) == 1
 code = code.replace(needle, 'nspire_test_file(path, sizeof(path), "gpsp_results.txt.tns");')
