@@ -1,4 +1,4 @@
-name: UltraGBA Run003 - Compressed ROMs and Safe Saves
+name: UltraGBA Run003 - Compressed ROMs and ROM-Local Saves
 
 on:
   workflow_dispatch:
@@ -47,12 +47,12 @@ jobs:
           cat > dist/README.txt <<'EOF'
           Run003 — experimental. Keep the old emulator and ALL existing saves.
           Save states, battery saves and per-game settings now go beside ROM.
-          Old central saves are copied when needed; originals remain untouched.
+          Old central saves are not moved or imported; originals remain untouched.
           Large ZIP ROMs may still run out of RAM: use GBZ instead.
           Use upstream tools/gbz.py pack GAME.zip.tns on Android/Termux;
           copy the resulting GAME.gbz.tns to the Nspire.
           GBZ page-based loading uses the selected ROM buffer, e.g. 8 MiB.
-          Test copies of saves first; do not remove originals.
+          Existing saves stay in their old location, and are not loaded automatically.\n          Test new games or backed-up saves; do not remove originals.
           EOF
       - uses: actions/upload-artifact@v4
         with:
