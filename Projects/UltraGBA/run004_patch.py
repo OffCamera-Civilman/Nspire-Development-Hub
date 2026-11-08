@@ -283,7 +283,7 @@ g = g.replace(needle, '''#if defined(NSPIRE_LIBRETRO)
 needle = '    string_selection_option(NULL, "Interframe blending", nspire_frame_mix_options,'
 assert g.count(needle) == 1
 g = g.replace(needle, '''    submenu_option(&custom_rtc_menu, "Custom RTC",
-     "Choose system clock or set custom date/time.\n"
+     "Choose system clock or set custom date/time.\\n"
      "Use Apply and save before leaving.", 6),
 '''+needle)
 # Add submenu before emulator menu option declaration.
@@ -304,7 +304,7 @@ g = g.replace(needle, '''  void submenu_custom_rtc() { ugba_rtc_apply(); }
     numeric_selection_option(NULL, "Minute", &ugba_rtc_minute, 60,
       "0-59.", 5),
     action_option(ugba_rtc_apply, NULL, "Apply and save RTC",
-      "Store your clock in UltraGBA_Data and restart its\n"
+      "Store your clock in UltraGBA_Data and restart its\\n"
       "timer from the entered date and time.", 7),
     submenu_option(NULL, "Back", "Return to emulator options.", 9)
   };
