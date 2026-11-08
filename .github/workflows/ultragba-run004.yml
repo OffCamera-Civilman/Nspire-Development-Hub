@@ -1,4 +1,4 @@
-name: UltraGBA Run004 - Custom RTC and Local Data
+name: UltraGBA Run004 - Custom RTC Layout Fix Rev2
 
 on:
   workflow_dispatch:
@@ -41,7 +41,7 @@ jobs:
           set -euxo pipefail
           test -s upstream-gpsp/gpsp_libretro.tns
           mkdir -p dist
-          cp upstream-gpsp/gpsp_libretro.tns dist/UltraGBA_Run004_CustomRTC_Preview.tns
+          cp upstream-gpsp/gpsp_libretro.tns dist/UltraGBA_Run004_LayoutFix_Rev2.tns
           cp upstream-commit.txt dist/
           sha256sum dist/*.tns > dist/SHA256SUMS.txt
           cat > dist/README.txt <<'EOF'
@@ -56,6 +56,6 @@ jobs:
           EOF
       - uses: actions/upload-artifact@v4
         with:
-          name: UltraGBA_Run004_LocalData_Preview
+          name: UltraGBA_Run004_LayoutFix_Rev2
           path: dist/
           if-no-files-found: error
