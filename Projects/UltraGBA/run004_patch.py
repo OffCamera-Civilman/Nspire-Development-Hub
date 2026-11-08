@@ -319,3 +319,79 @@ assert g.count(needle) >= 1, "RTC GUI include point not found"
 g = g.replace(needle, needle + '\n#include "ultragba_custom_rtc.h"', 1)
 gui.write_text(g)
 print("Run004 custom RTC menu, persistent clock, and GBA RTC bridge patched")
+
+# Run004 layout verification: resolve parent folders from the actual executable
+# path, never from a working directory changed by the document browser.
+# Also make selected menu row inverse-video (currently near-invisible green).
+paths = Path("upstream-gpsp/nspire_paths.c")
+p = paths.read_text()
+needle = 'char nspire_program_path[512];'
+assert p.count(needle) == 1
+p = p.replace(needle, needle + """
+static char ugba_executable_dir[512];
+
+/* Called during startup using the actual executable path (argv[0]).
+   No fallback path should silently point to a parent directory. */
+void ugba_set_executable_dir(const char *exe_path, const char *working_dir)
+{
+  char clean[512];
+  const char *slash;
+  nspire_normalize_path(clean, sizeof(clean), exe_path);
+  slash = strrchr(clean, '/');
+  if (slash) {
+    if (slash == clean)
+      snprintf(ugba_executable_dir, sizeof(ugba_executable_dir), "/");
+    else
+      snprintf(ugba_executable_dir, sizeof(ugba_executable_dir),
+               "%.*s", (int)(slash - clean), clean);
+  } else {
+    /* A bare filename is resolved relative to the startup working dir. */
+    snprintf(ugba_executable_dir, sizeof(ugba_executable_dir),
+             "%s", working_dir);
+  }
+}
+const char *ugba_get_executable_dir(void) { return ugba_executable_dir; }
+""")
+needle = '  snprintf(nspire_test_directory, sizeof(nspire_test_directory),\n           "%s/UltraGBA_Tests", emulator_dir);'
+assert p.count(needle) == 1
+p = p.replace(needle, '  snprintf(nspire_test_directory, sizeof(nspire_test_directory),\n           "%s/UltraGBA_Tests", ugba_get_executable_dir());')
+# Save-file route must use same executor directory as test-folder route.
+needle = '''  char program[512];
+  const char *slash;
+  nspire_normalize_path(program, sizeof(program), nspire_program_path);
+  slash = strrchr(program, '/');
+  if (slash)
+    snprintf(out, size, "%.*s/UltraGBA_Data%s%s",
+             (int)(slash - program), program, name[0] ? "/" : "", name);
+  else
+    snprintf(out, size, "UltraGBA_Data%s%s", name[0] ? "/" : "", name);'''
+assert p.count(needle) == 1
+p = p.replace(needle, '''  snprintf(out, size, "%s/UltraGBA_Data%s%s",
+           ugba_get_executable_dir(), name[0] ? "/" : "", name);''')
+paths.write_text(p)
+hdr = Path("upstream-gpsp/nspire_paths.h")
+h = hdr.read_text()
+needle = 'void nspire_test_dir_init(const char *emulator_dir);'
+assert h.count(needle) == 1
+h = h.replace(needle, '''void ugba_set_executable_dir(const char *exe_path, const char *working_dir);
+const char *ugba_get_executable_dir(void);
+'''+needle)
+hdr.write_text(h)
+host = Path("upstream-gpsp/nspire_host_main.c")
+h = host.read_text()
+needle = '  nspire_test_dir_init(main_path);'
+assert h.count(needle) == 1
+h = h.replace(needle, '''  ugba_set_executable_dir(nspire_program_path, main_path);
+  nspire_test_dir_init(ugba_get_executable_dir());''')
+host.write_text(h)
+
+gui = Path("upstream-gpsp/gui.c")
+g = gui.read_text()
+needle = '''        print_string_pad(line_buffer, COLOR_ACTIVE_ITEM, COLOR_BG, 10,
+         (line * 10) + 40, 41);'''
+assert g.count(needle) == 1
+g = g.replace(needle, '''        /* Bright full-row inverse highlight for unmistakable selection. */
+        print_string_pad(line_buffer, COLOR_BG, COLOR_ACTIVE_ITEM, 10,
+         (line * 10) + 40, 41);''')
+gui.write_text(g)
+print("Run004: exe-relative Data/Tests layout and inverse selection highlight")
