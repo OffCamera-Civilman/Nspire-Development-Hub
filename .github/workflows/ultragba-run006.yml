@@ -1,0 +1,61 @@
+name: UltraGBA Run006 - Custom RTC Layout Fix Rev2
+
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - '.github/workflows/ultragba-run006.yml'
+      - 'Projects/UltraGBA/run006_patch.py'
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - name: Clone pinned gpSP source with GBZ paging support
+        run: |
+          set -euxo pipefail
+          git clone https://github.com/andymcca/lr-gpsp-nspire.git upstream-gpsp
+          git -C upstream-gpsp checkout 2ddeb23b565cab84e20278bb73ed76f3d91b25f5
+          git -C upstream-gpsp rev-parse HEAD > upstream-commit.txt
+      - name: Apply safe ROM-local save patch
+        run: |
+          set -euxo pipefail
+          python3 Projects/UltraGBA/run006_patch.py
+          git -C upstream-gpsp diff --check
+      - name: Build Ndless TI-Nspire binary
+        run: |
+          set -euxo pipefail
+          docker pull bensuperpc/ndless:latest
+          docker run --rm --entrypoint /bin/sh \
+            --mount "type=bind,source=$GITHUB_WORKSPACE,target=/work" \
+            --workdir /work/upstream-gpsp \
+            bensuperpc/ndless:latest \
+            -c 'set -eu; command -v nspire-gcc; command -v nspire-g++; command -v genzehn; make -j2'
+      - name: Package distinct Run006 output
+        run: |
+          set -euxo pipefail
+          test -s upstream-gpsp/gpsp_libretro.tns
+          mkdir -p dist
+          cp upstream-gpsp/gpsp_libretro.tns dist/UltraGBA_Run006_Associations.tns
+          cp upstream-commit.txt dist/
+          sha256sum dist/*.tns > dist/SHA256SUMS.txt
+          cat > dist/README.txt <<'EOF'
+          Run006 — RTC persistence verified on calculator in Run005; new ROM association fix needs testing. Keep the old emulator and ALL existing saves.
+          ROM saves, states and per-game settings remain beside ROMs. Appends missing ext.gba/ext.gbz in Ndless config, leaves other associations untouched. Reopen the calculator Documents to test direct launch.
+          Emulator-managed files now use UltraGBA_Data beside emulator; old central folder is untouched.
+          Large ZIP ROMs may still run out of RAM: use GBZ instead.
+          Use upstream tools/gbz.py pack GAME.zip.tns on Android/Termux;
+          copy the resulting GAME.gbz.tns to the Nspire.
+          GBZ page-based loading uses the selected ROM buffer, e.g. 8 MiB.
+          Existing central files stay in their old location; no automatic migration.\n          Test new games or backed-up saves; do not remove originals. Custom RTC menu included: select System/Custom, set date and Apply RTC. Custom clock uses saved host clock reference across restarts when host clock is advancing. If host clock stalls or resets, offline elapsed time cannot be reconstructed. Legacy 6-field time configs must be re-applied once to enable timestamp tracking.
+          EOF
+      - uses: actions/upload-artifact@v4
+        with:
+          name: UltraGBA_Run006_Associations
+          path: dist/
+          if-no-files-found: error
