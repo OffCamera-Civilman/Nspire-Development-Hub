@@ -7,19 +7,36 @@ on:
       - 'UltraZIP/**'
       - '.github/workflows/ultrazip.yml'
 
+permissions:
+  contents: read
+
 jobs:
   build:
     runs-on: ubuntu-latest
     timeout-minutes: 30
     steps:
       - uses: actions/checkout@v4
-      - name: Fetch miniz dependency
-        run: sh UltraZIP/get_miniz.sh
-      - name: Build Ndless TNS
+      - name: Fetch pinned ZIP dependency in UltraZIP directory
         run: |
-          docker run --rm -v "$GITHUB_WORKSPACE:/workspace" -w /workspace/UltraZIP ndless/ndless-sdk:latest sh -c 'set -eu; make'
+          set -euxo pipefail
+          cd UltraZIP
+          sh ./get_miniz.sh
+          test -s vendor/miniz/miniz.h
+      - name: Build using the same Ndless container as UltraGBA
+        run: |
+          set -euxo pipefail
+          docker pull bensuperpc/ndless:latest
+          docker run --rm --entrypoint /bin/sh \
+            --mount "type=bind,source=$GITHUB_WORKSPACE,target=/work" \
+            --workdir /work/UltraZIP \
+            bensuperpc/ndless:latest \
+            -c 'set -eu; command -v nspire-gcc; command -v nspire-ld; command -v genzehn; make clean all'
+      - name: Confirm TNS and checksum
+        run: |
+          test -s UltraZIP/UltraZIP_001.tns
+          file UltraZIP/UltraZIP_001.tns
+          sha256sum UltraZIP/UltraZIP_001.tns
       - name: Upload calculator executable
-        if: success()
         uses: actions/upload-artifact@v4
         with:
           name: UltraZIP_001_TNS
