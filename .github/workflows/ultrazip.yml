@@ -1,4 +1,4 @@
-name: Build UltraZIP 001
+name: Build UltraZIP 002
 
 on:
   workflow_dispatch:
@@ -33,12 +33,12 @@ jobs:
             -c 'set -eu; command -v nspire-gcc; command -v nspire-ld; command -v genzehn; make clean all'
       - name: Confirm TNS and checksum
         run: |
-          test -s UltraZIP/UltraZIP_001.tns
-          file UltraZIP/UltraZIP_001.tns
-          sha256sum UltraZIP/UltraZIP_001.tns
+          test -s UltraZIP/UltraZIP_002.tns
+          file UltraZIP/UltraZIP_002.tns
+          sha256sum UltraZIP/UltraZIP_002.tns
       - name: Upload calculator executable
         uses: actions/upload-artifact@v4
         with:
-          name: UltraZIP_001_TNS
-          path: UltraZIP/UltraZIP_001.tns
+          name: UltraZIP_002_TNS
+          path: UltraZIP/UltraZIP_002.tns
           if-no-files-found: error
