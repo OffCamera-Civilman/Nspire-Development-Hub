@@ -1,0 +1,160 @@
+name: UltraGBA Complete AI Handoff ZIP
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - '.github/workflows/ultragba-handoff-package.yml'
+permissions:
+  contents: read
+  actions: read
+jobs:
+  package:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Preserve Git history, all branches, and pinned gpSP source
+        run: |
+          set -euo pipefail
+          mkdir -p handoff/{docs,history,branches,upstream-pinned,build-artifacts,manifests}
+          git fetch --no-tags origin '+refs/heads/*:refs/remotes/origin/*'
+          git branch -r > handoff/manifests/remote-branches.txt
+          git log --all --date=iso-strict --format='%H %ad %d %s' > handoff/manifests/commit-history.txt
+          git bundle create handoff/history/UltraGBA-all-repo-branches.bundle --all
+          git bundle verify handoff/history/UltraGBA-all-repo-branches.bundle
+          for ref in $(git for-each-ref --format='%(refname:short)' refs/remotes/origin); do
+            b=$(echo "$ref" | sed 's@^origin/@@')
+            test "$b" != HEAD || continue
+            mkdir -p "handoff/branches/$b"
+            git archive "refs/remotes/origin/$b" | tar -xf - -C "handoff/branches/$b"
+          done
+          git clone https://github.com/andymcca/lr-gpsp-nspire.git /tmp/ultragba-upstream
+          git -C /tmp/ultragba-upstream checkout 2ddeb23b565cab84e20278bb73ed76f3d91b25f5
+          git -C /tmp/ultragba-upstream rev-parse HEAD > handoff/manifests/upstream-commit.txt
+          git -C /tmp/ultragba-upstream archive HEAD | tar -xf - -C handoff/upstream-pinned
+          cp -a Projects/UltraGBA handoff/UltraGBA-Patches
+          cp -a .github/workflows handoff/CI-workflows
+          cp README.md handoff/docs/REPOSITORY_README.md
+          cp -a docs/. handoff/docs/
+      - name: Fetch successful .tns binaries Run002–Run007
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -uo pipefail
+          while read -r run label; do
+            mkdir -p "handoff/build-artifacts/$label"
+            if gh run download "$run" --repo "$GITHUB_REPOSITORY" --dir "handoff/build-artifacts/$label"; then
+              echo "$run $label OK" >> handoff/manifests/build-artifact-status.txt
+            else
+              echo "$run $label unavailable" >> handoff/manifests/build-artifact-status.txt
+            fi
+          done <<'RUNS'
+          42349357205 Run002
+          42510428246 Run003
+          42517059465 Run004_Rev2
+          42959673360 Run005
+          42967127052 Run006
+          43156670987 Run007
+          RUNS
+      - name: Make AI handoff instructions, checksums and ZIP
+        run: |
+          set -euo pipefail
+          cat > handoff/START_HERE_AI_REBUILD.md <<'GUIDE'
+          # UltraGBA complete project handoff for another AI
+          Original: https://github.com/OffCamera-Civilman/Nspire-Development-Hub
+          This package includes ALL source branches and original Git history,
+          the pinned upstream source, Python patches for Run003–Run007,
+          GitHub Actions workflows, original compiled .tns artifacts when
+          available, project docs, and SHA256 checksums.
+          
+          ## Layout
+          - history/UltraGBA-all-repo-branches.bundle: full Git history.
+          - branches/: original repo snapshots for each branch.
+          - UltraGBA-Patches/: cumulative run003_patch.py through run007_patch.py.
+          - CI-workflows/: exact build recipes.
+          - upstream-pinned/: upstream gpSP source at SHA:
+            2ddeb23b565cab84e20278bb73ed76f3d91b25f5.
+          - build-artifacts/: original successful build files Run002–Run007.
+          - manifests/: branch list, commit history, hashes, workflow runs.
+          
+          ## EXACT Run007 build using provided source
+          Start in directory containing this README:
+              mkdir upstream-gpsp
+              cp -a upstream-pinned/. upstream-gpsp/
+              python3 UltraGBA-Patches/run007_patch.py
+              git -C upstream-gpsp diff --check  # only if initialized as a git repo
+              docker run --rm --entrypoint /bin/sh \
+                --mount "type=bind,source=$PWD,target=/work" \
+                --workdir /work/upstream-gpsp bensuperpc/ndless:latest \
+                -c 'set -eu; make -j2'
+              cp upstream-gpsp/gpsp_libretro.tns UltraGBA_Run007_BrowserClean.tns
+          Or use CI-workflows/ultragba-run007.yml on GitHub Actions, which
+          clones the original pinned upstream before applying the patch.
+          For older versions use the corresponding runNNN_patch.py and workflow.
+          Run007 patch includes Run003–Run006 changes internally.
+          The Docker image is pinned by tag, NOT image digest; future binaries
+          may differ at the byte level even if source builds successfully.
+          
+          ## Restore complete history to a NEW GitHub repository
+              git clone history/UltraGBA-all-repo-branches.bundle UltraGBA-restored
+              cd UltraGBA-restored
+              git branch -a
+          Set a NEW empty GitHub remote and push the branches. Don't force-push
+          or overwrite any preexisting repo. Snapshot branches are available
+          separately for import by AIs that cannot use a Git bundle.
+          
+          ## Confirmed device, behavior and tests
+          Target TI-Nspire CX II CAS, OS 6.4.0.74, Ndless.
+          Run003 GBZ page-based compression tested in Pokémon gameplay; user
+          observed approximately 59.6 FPS normal and 130–144 fast-forward.
+          One original 32 MiB ROM compressed to ~18.9 MiB GBZ. Prior
+          Unbound/Enhanced Emerald/Wishes of Tomorrow trials are in history.
+          User CONFIRMED Run005 custom RTC advances across emulator restarts.
+          User confirmed Run007 emulator itself runs on-device.
+          Emulator layout:
+              UltraGBA/UltraGBA_Run007_BrowserClean.tns
+              UltraGBA/UltraGBA_Data/
+              UltraGBA/UltraGBA_Tests/
+          Save files, states and per-game settings stay in each ROM's folder.
+          NEVER delete, migrate, overwrite old ROM saves or zgpSP_saves.
+          GBZ1 is established; GBZ2 is not required.
+          
+          ## Outstanding work: native ROM launching (Run008 candidate)
+          Tapping Unboundv2.1.gbz.tns from native Documents browser shows
+          "This document format is not supported" (confirmed screenshot).
+          Run006 modified ndless.cfg.tns extensions, but user confirmed no
+          effect. Run007 intentionally REMOVED ALL automatic Ndless config
+          mutation while retaining argv-based ROM loading functionality.
+          Do NOT assume browser dispatch is solved or blindly re-add cfg
+          writes. Investigate native Documents browser, Ndless extension
+          association mechanism and .gbz.tns / .gba.tns dispatch separately.
+          Existing user's ndless.cfg.tns also includes image viewer mappings;
+          preserve them. nHide/nKits allows user to see root folders, but
+          DO NOT edit OS/root partitions to fix a ROM launching problem.
+          
+          ## Instructions to rebuilding AI
+          Preserve run-number naming, make changes in new Run008 branch, keep
+          all working Run007 RTC/GBZ/save features, build via GitHub Actions,
+          inspect success and download REAL .tns artifact before claiming done.
+          Do not commit copyrighted ROMs, console BIOS, or personal save data.
+          GUIDE
+          cat > handoff/manifests/GITHUB_RUNS.txt <<'RUNS'
+          Run002 42349357205 success
+          Run003 42510428246 success
+          Run004 Rev2 42517059465 success
+          Run005 42959673360 success / RTC restart confirmed
+          Run006 42967127052 success / cfg auto changes ineffective
+          Run007 43156670987 success / device launch confirmed
+          RUNS
+          (cd handoff && find . -type f ! -name SHA256SUMS.txt -print0 | sort -z | xargs -0 sha256sum > manifests/SHA256SUMS.txt)
+          mkdir -p dist
+          zip -qr -9 dist/UltraGBA_COMPLETE_AI_REBUILD_HANDOFF.zip handoff
+          ls -lh dist/UltraGBA_COMPLETE_AI_REBUILD_HANDOFF.zip
+      - uses: actions/upload-artifact@v4
+        with:
+          name: UltraGBA_COMPLETE_AI_REBUILD_HANDOFF
+          path: dist/UltraGBA_COMPLETE_AI_REBUILD_HANDOFF.zip
+          if-no-files-found: error
+          retention-days: 30
