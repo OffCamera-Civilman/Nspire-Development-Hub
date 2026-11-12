@@ -1,0 +1,27 @@
+name: Build UltraZIP 001
+
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - 'UltraZIP/**'
+      - '.github/workflows/ultrazip.yml'
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - name: Fetch miniz dependency
+        run: sh UltraZIP/get_miniz.sh
+      - name: Build Ndless TNS
+        run: |
+          docker run --rm -v "$GITHUB_WORKSPACE:/workspace" -w /workspace/UltraZIP ndless/ndless-sdk:latest sh -c 'set -eu; make'
+      - name: Upload calculator executable
+        if: success()
+        uses: actions/upload-artifact@v4
+        with:
+          name: UltraZIP_001_TNS
+          path: UltraZIP/UltraZIP_001.tns
+          if-no-files-found: error
